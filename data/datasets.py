@@ -160,7 +160,7 @@ class Dataset(object):
 					this_ys = torch.tensor([ys[j] for j in idxs])
 			return this_xs, this_ys
 
-		xs, ys = dataset if not is_multitask else dataset[0]
+		xs, ys = dataset if not is_multitask else dataset[0] # TODO: ChexPert
 		if not len(xs):
 			return
 		idxs = list(range(len(xs))) if not shuffle else np.random.permutation(len(xs))
@@ -172,7 +172,7 @@ class Dataset(object):
 			num_batches = len(xs) * 1.0 / batch_sz
 		num_batches = math.ceil(num_batches)
 		if is_multitask:
-			v_xs, v_ys = dataset[1]
+			v_xs, v_ys = dataset[1]	# TODO: tiny Imagenet
 			# Upsample to the size of the training set
 			v_batch_sz = math.ceil(math.ceil(len(xs) * self.val_taskweight) / num_batches)
 			size_ = v_batch_sz * num_batches

@@ -160,6 +160,12 @@ class Trainer(object):
 			v_ = proj_mat[:, i]
 			model.make_functional()
 			out = torch.autograd.functional.vjp(model.functional_(subspace_set, head_name='tgt'), model.params, v=v_)
+			"""
+			vjp: Vector-Jacobian Product
+			func: model.functional_(subspace_set, head_name='tgt') main task loss function
+			inputs: model.params
+			v: 가중치 벡터
+   			"""
 			prod_.append(vectorize(out[1])[1].unsqueeze(1))
 		# return the dropout layers
 		set_model_dropout(model.model, old_dp)
@@ -223,10 +229,17 @@ class Trainer(object):
 
 		self.pca_cntr += 1
 		if (self.pca_every == self.pca_cntr) or (not hasattr(self, 'ortho_basis')):
+			"""
+   			self.pca_every == 10
+			최초에는 ortho_basis를 한 번 정의해주어야 하나봄
+      		"""
 			self.pca_cntr = 0
 			ortho_basis, stats, self.base_comp, avg_val_grad = self.get_ortho_grad_basis(model, base_set, val_set)
 			self.ortho_basis, self.stats = ortho_basis, stats
 		else:
+			"""
+   			randomized lowrank approximation
+      		"""
 			ortho_basis, stats = self.ortho_basis, self.stats
 			self.base_comp, avg_val_grad = self.get_low_rank(
 															model, ortho_basis, val_set[0],
@@ -250,6 +263,9 @@ class Trainer(object):
 		return tr_new_grads, (tr_delta_norm, tr_loss, tr_num_crt), (m_val_delta_norm, m_val_loss, val_num_crt), avg_val_grad
 
 	def run_epoch_grad_proj(self, model, data_iter, optim, group=None):
+		"""
+  		USING ATTITTUD
+    	"""
 		model.train()
 		assert optim is not None, 'optimizer should be initialized'
 		total_loss, total_correct, num_pts = 0.0, 0.0, 0.0
@@ -317,10 +333,19 @@ class Trainer(object):
 	def get_vectorized_gradients(self, data, model, group='src'):
 		loss, num_correct = self.run_model(data[0], data[1], model, group=group, reduct_='mean')
 		all_grads = list(torch.autograd.grad(loss, model.parameters(), allow_unused=True))
+		"""
+		torch.autograd.grad: 주어진 output에 대한 inputs들의 미분(도함수)를 계산
+		loss에 대해 model의 모든 파라미터들의 미분값을 계산
+		allow_unused=True일 경우에는 해당 weight의 미분값을 계산할 수 없다면 해당 위치는 None으로 반환하고 for문에서 None값을 0으로 초기화함
+  		"""
 		for idx_, p in enumerate(model.parameters()):
 			if all_grads[idx_] is None:
 				all_grads[idx_] = torch.zeros_like(p)
 		_, grads = vectorize(all_grads)
+		"""
+  		gradient의 모든 tensor를 flatten
+		_: shape를 저장 그냥 모델의 모든 gradient값에서 good, bad, neurtal를 계산하는가 보네..
+    	"""
 		return loss, num_correct, grads
 
 	def get_multitask_weights(self, losses, corrects, szs):
@@ -329,10 +354,10 @@ class Trainer(object):
 		tr_sz, val_sz = szs
 
 		tr_scale = 1.0 if tr_loss > self.min_tr_loss else 0.0
-		sz = (tr_sz * tr_scale) + val_sz
-		tr_weight = tr_sz * tr_scale / sz
-		val_weight = val_sz / sz
-		combined_loss = (tr_loss * tr_weight) + (val_loss * val_weight)
+		sz = (tr_sz * tr_scale) + val_sz	# 총 데이터 크기 train_loss가 minimum보다 클 경우
+		tr_weight = tr_sz * tr_scale / sz	# main task 가중치 계산
+		val_weight = val_sz / sz			# auxiliary task 가중치 계산
+		combined_loss = (tr_loss * tr_weight) + (val_loss * val_weight)	# comine
 		combined_correct = (tr_crt * tr_scale) + val_crt
 		return tr_weight, val_weight, combined_loss, combined_correct, sz
 
@@ -343,11 +368,19 @@ class Trainer(object):
 		total_loss, total_correct, num_pts = 0.0, 0.0, 0.0
 		for x, y in data_iter:
 			if self.do_multitask and (optim is not None):
+				"""
+				ChexPert: main task
+				tiny imagenet: auxiliary task
+				각 gradient 계산
+    			"""
 				tr_loss, tr_crt, tr_grads = self.get_vectorized_gradients((x[0], y[0]), model, group='src')
 				val_loss, val_crt, val_grads = self.get_vectorized_gradients((x[1], y[1]), model, group='tgt')
 
 				out_ = self.get_multitask_weights((tr_loss, val_loss), (tr_crt, val_crt), (y[0].shape[0], y[1].shape[0]))
 				tr_weight, val_weight, loss, num_correct, sz = out_
+				"""
+				loss는 main task의 샘플 수와 auxiliary task의 샘플 수와 비례해서 계산 
+    			"""
 
 				with torch.no_grad():
 					inner_prod = 0.0
